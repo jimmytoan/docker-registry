@@ -1,0 +1,33 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: busybox-retention # Create separated CronJob for each repository
+  namespace: docker-registry
+spec:
+  schedule: "0 1 * * *" # Set scheduler to run retention on 1:00 AM everyday
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          name: busybox-retention
+        spec:
+          containers:
+          - name: busybox-retention
+            image: k8s.gcr.io/redis # using redis image to run redis-cli for clean up cached blobs 
+            command: [ "bash" ]
+            args: [ "/registry/cleanup.sh", "busybox", "1" ] # retention policy for busybox to keep only 1 recent tag
+            env:
+            - name: PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: admin
+                  key: password # the key in secret to get the real password value for admin user
+            volumeMounts:
+              - name: script
+                mountPath: "/registry"
+          restartPolicy: OnFailure
+          volumes:
+            - name: script
+              configMap:
+                name: retention

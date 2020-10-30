@@ -1,0 +1,50 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: retention # the retention script
+  namespace: docker-registry
+data:
+  cleanup.sh: |
+    #!/usr/bin/env bash
+    # instead of using k8s.gcr.io/redis image
+    # we can build new docker image that includes redis-cli and jq to run this cronjob
+    # so it reduces spin up time as it does not run 2 apt commands below
+    apt update
+    apt install -y jq
+    REPOSITORY=$1
+    KEEP_N_IMAGES=$2
+    SKIP_N_K_VALUES=$(($KEEP_N_IMAGES + 1))
+    # the following header must be used when HEAD or GET the manifest to obtain the correct digest to delete
+    # see details at https://docs.docker.com/registry/spec/api/
+    ACCEPT_HEADER="Accept: application/vnd.docker.distribution.manifest.v2+json"
+    DOMAIN="registry.jimmytoan.com"
+
+    ARRAY=()
+    declare -A TIME_TAG_MAP
+    TAGS=`curl -u admin:$PASSWORD -Ls https://$DOMAIN/v2/$REPOSITORY/tags/list | jq -r '.tags[]'`
+    NUM_TAG=`echo $TAGS | wc -w | awk '{ print $1 }'`
+    # Get all tags and upload time of each tag on $REPOSITORY 
+    if [ $NUM_TAG -gt 0 ]; then
+        for TAG in $TAGS; do
+            DIGEST=`curl -u admin:$PASSWORD -Ls --header "$ACCEPT_HEADER" GET https://$DOMAIN/v2/$REPOSITORY/manifests/$TAG | jq -r '.config.digest'`
+            MANIFEST_ID=`curl -u admin:$PASSWORD -Ls --header "$ACCEPT_HEADER" -I -X HEAD https://$DOMAIN/v2/$REPOSITORY/manifests/$TAG | grep Docker-Content-Digest | awk -F ": " '{ print $2 }'`
+            UPLOAD_TIME=`curl -u admin:$PASSWORD -Ls -X GET https://$DOMAIN/v2/$REPOSITORY/blobs/$DIGEST | jq '.created' | sort | tail -n1 | sed 's/"//g'`
+            ARRAY+=" $UPLOAD_TIME"
+            TIME_TAG_MAP[$UPLOAD_TIME]=${MANIFEST_ID%$'\r'}   # Remove a trailing \r
+            echo "$TAG | $UPLOAD_TIME | $MANIFEST_ID"
+        done
+    fi
+
+    # Sort time array to keep some ($KEEP_N_IMAGES) recent tags 
+    # Delete manifest on docker registry
+    # Also delete blobs cached on redis
+    if [ ${#ARRAY[@]} -gt 0 ]; then
+        for i in $((printf '%s\n' ${ARRAY[@]}) | sort -rn | tail -n +$SKIP_N_K_VALUES); do
+            ID="${TIME_TAG_MAP[$i]}"
+            echo "Deleting manifest: $ID - $i"
+            curl -u admin:$PASSWORD -Ls -X DELETE "https://$DOMAIN/v2/$REPOSITORY/manifests/$ID"
+            # connect to service name "redis" which is create from ./redis/service.yml
+            redis-cli -h redis del "repository::${REPOSITORY}::blobs::$ID"
+            redis-cli -h redis del "blobs::$ID"
+        done
+    fi

@@ -1,0 +1,32 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: garbage-collection
+  namespace: docker-registry
+spec:
+  schedule: "0 2 * * *" # Set scheduler to remove garbage on 2:00 AM everyday (after image retention)
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          name: garbage-collection
+        spec:
+          containers:
+          - name: garbage-collection
+            image: registry:2
+            args:
+            - /bin/registry
+            - garbage-collect
+            - /etc/docker/registry/config.yml
+            envFrom:
+            - configMapRef:
+                name: registry
+            volumeMounts:
+            - name: image-data
+              mountPath: /var/lib/registry
+          restartPolicy: OnFailure
+          volumes:
+            - name: image-data
+              persistentVolumeClaim:
+                claimName: efs-claim

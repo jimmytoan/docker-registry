@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-registry
+  namespace: docker-registry
+  labels:
+    app: docker-registry
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: docker-registry
+  template:
+    metadata:
+      labels:
+        app: docker-registry
+    spec:
+      containers:
+        - image: registry:2
+          name: docker-registry
+          resources:
+            limits:
+              cpu: 500m
+              memory: 500Mi
+            requests:
+              cpu: 200m
+              memory: 200Mi
+          envFrom:
+            - configMapRef:
+                name: registry
+          volumeMounts:
+            - name: files
+              mountPath: /etc/k8s
+            - name: image-data
+              mountPath: /var/lib/registry
+          ports:
+            - name: registry
+              containerPort: 5000
+              protocol: TCP
+          imagePullPolicy: Always
+      restartPolicy: Always
+      volumes:
+        - name: files
+          configMap:
+            name: registry
+            items:
+            - key: HTPASSWD_FILE
+              path: htpasswd
+        - name: image-data
+          persistentVolumeClaim:
+            claimName: efs-claim
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: registry
+  namespace: docker-registry
+data:
+  REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY: /var/lib/registry
+  REGISTRY_HTTP_SECRET: UA7aSwem3z9VBX5z # Random value but need to be the same for all docker registry containers
+  REGISTRY_STORAGE_CACHE_BLOBDESCRIPTOR: redis
+  REGISTRY_REDIS_ADDR: redis:6379
+  REGISTRY_STORAGE_DELETE_ENABLED: "true"
+  REGISTRY_AUTH: htpasswd
+  REGISTRY_AUTH_HTPASSWD_PATH: /etc/k8s/htpasswd
+  REGISTRY_AUTH_HTPASSWD_REALM: Docker Registry
+  HTPASSWD_FILE: |
+    admin:$2y$05$twD1zWQOZs10POAi8NibCeDFNZM/KWVSZHO7BU0kadVAL89n3RXxW

@@ -9,18 +9,23 @@ We can use `envsubst` command to substitute environment variables against the te
 I keep this repo simple without adding multiple template files to review easily
 
 **Domain name for docker registry**
+
 Default value: `registry.jimmytoan.com`
 
 **AWS ACM for the above domain**
+
 Default value: `arn:aws:acm:ap-southeast-1:421376589955:certificate/b3e3890a-02a5-47c2-ab42-64fec4315231`
 
 **VPC CIDR for proxy-real-ip-cidr of nginx ingress controller**
+
 Default value: `10.10.0.0/19`
 
 **AWS EFS volume ID to store docker image data**
+
 Default value: `fs-ab5e4cea `
 
 **Password for admin user to access docker registry**
+
 Default value: `password`
 
 ## Deployment
